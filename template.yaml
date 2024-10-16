@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  ApiRateLimit:
+    Type: String
+    Default: "100"
+    Description: "Rate limit for the API Gateway (in requests per second)"
+
+Resources:
+  # API Gateway
+  EventLogsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      ApiKeyRequired: true
+      Throttle:
+        RateLimit: !Ref ApiRateLimit
+      Auth:
+        ApiKeyRequired: true
+      EndpointConfiguration: REGIONAL
+      Cors: "'*'"
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: Event Logs API
+          version: 1.0
+        paths:
+          /event-logs:
+            get:
+              x-amazon-apigateway-integration:
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListEventsFunction.Arn}/invocations
+                httpMethod: GET
+                type: aws_proxy
+            post:
+              x-amazon-apigateway-integration:
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SaveEventFunction.Arn}/invocations
+                httpMethod: POST
+                type: aws_proxy
+
+  # Lambda Function to list events (GET /event-logs)
+  ListEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/getEventLog.listEventsHandler
+      Runtime: nodejs20.x
+      CodeUri: src/handlers/
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          DATABASE_TYPE: Aurora
+          AURORA_DB_SECRET: !Ref AuroraDBSecret
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
+      Events:
+        ListEvents:
+          Type: Api
+          Properties:
+            Path: /event-logs
+            Method: GET
+            RestApiId: !Ref EventLogsApi
+
+  # Lambda Function to save events (POST /event-logs)
+  SaveEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/createEventLog.createEventHandler
+      Runtime: nodejs20.x
+      CodeUri: src/handlers/
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          SQS_QUEUE_URL: !GetAtt EventQueue.QueueUrl
+      Events:
+        SaveEvent:
+          Type: Api
+          Properties:
+            Path: /event-logs
+            Method: POST
+            RestApiId: !Ref EventLogsApi
+
+  # SQS Queue for event logs
+  EventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: EventQueue
+
+  # Lambda to process events from SQS
+  ProcessEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/processEventLog.processEventHandler
+      Runtime: nodejs20.x
+      CodeUri: src/handlers/
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          DATABASE_TYPE: Aurora
+          AURORA_DB_SECRET: !Ref AuroraDBSecret
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
+      Events:
+        ProcessEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EventQueue.QueueUrl
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${EventLogsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/event-logs"
+
+  QueueUrl:
+    Description: "SQS Queue URL"
+    Value: !GetAtt EventQueue.QueueUrl

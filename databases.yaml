@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  # Aurora MySQL DB Instance (standalone)
+  AuroraDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.r5.large
+      Engine: aurora-mysql
+      DBInstanceIdentifier: MyAuroraInstance
+      MasterUsername: admin
+      MasterUserPassword: !Ref AuroraDBPassword
+      AllocatedStorage: 20
+      BackupRetentionPeriod: 7
+      PubliclyAccessible: false
+      EngineVersion: "5.7.mysql_aurora.2.07.1"
+      DBName: Registration
+
+  # Secrets Manager for Aurora DB credentials
+  AuroraDBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: AuroraDBCredentials
+      Description: "Credentials for Aurora DB"
+      SecretString: !Sub |
+        {
+          "username": "admin",
+          "password": "${AuroraDBPassword}"
+        }
+
+  # Password for Aurora DB
+  AuroraDBPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: "Password for Aurora DB"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  # DynamoDB Table for EventLogs
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EventLogs
+      AttributeDefinitions:
+        - AttributeName: "date"
+          AttributeType: "S"
+        - AttributeName: "type"
+          AttributeType: "S"
+        - AttributeName: "description"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "date"
+          KeyType: "HASH"
+        - AttributeName: "type"
+          KeyType: "RANGE"
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  AuroraDBSecretArn:
+    Description: "Aurora DB Secret ARN"
+    Value: !Ref AuroraDBSecret
+
+  AuroraDBInstanceEndpoint:
+    Description: "Aurora DB Instance Endpoint"
+    Value: !GetAtt AuroraDBInstance.Endpoint.Address
+
+  DynamoDBTableName:
+    Description: "DynamoDB Table Name"
+    Value: !Ref DynamoDBTable
