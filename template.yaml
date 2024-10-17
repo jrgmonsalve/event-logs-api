@@ -52,8 +52,8 @@ Resources:
       Environment:
         Variables:
           DATABASE_TYPE: Aurora
-          AURORA_DB_SECRET: !Ref AuroraDBSecret
-          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
+          AURORA_SECRET_ARN: !ImportValue AuroraDBSecretArn  # Importamos el ARN desde databases.yaml
+          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName  # Importamos el nombre de la tabla desde databases.yaml
       Events:
         ListEvents:
           Type: Api
@@ -63,7 +63,7 @@ Resources:
             RestApiId: !Ref EventLogsApi
 
   # Lambda Function to save events (POST /event-logs)
-  SaveEventFunction:
+  CreateEventFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/createEventLog.createEventHandler
@@ -75,7 +75,7 @@ Resources:
         Variables:
           SQS_QUEUE_URL: !GetAtt EventQueue.QueueUrl
       Events:
-        SaveEvent:
+        CreateEvent:
           Type: Api
           Properties:
             Path: /event-logs
@@ -100,8 +100,8 @@ Resources:
       Environment:
         Variables:
           DATABASE_TYPE: Aurora
-          AURORA_DB_SECRET: !Ref AuroraDBSecret
-          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
+          AURORA_SECRET_ARN: !ImportValue AuroraDBSecretArn  # Importamos el ARN desde databases.yaml
+          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName  # Importamos el nombre de la tabla desde databases.yaml
       Events:
         ProcessEvent:
           Type: SQS

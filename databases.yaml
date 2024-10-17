@@ -61,6 +61,8 @@ Outputs:
   AuroraDBSecretArn:
     Description: "Aurora DB Secret ARN"
     Value: !Ref AuroraDBSecret
+    Export:
+      Name: AuroraDBSecretArn 
 
   AuroraDBInstanceEndpoint:
     Description: "Aurora DB Instance Endpoint"
@@ -69,3 +71,5 @@ Outputs:
   DynamoDBTableName:
     Description: "DynamoDB Table Name"
     Value: !Ref DynamoDBTable
+    Export:
+      Name: DynamoDBTableName
