@@ -1,4 +1,4 @@
-import { SQS } from 'aws-sdk';
+import { SQS } from '@aws-sdk/client-sqs';
 import { QueueRepository } from '../../domain/repository/QueueRepository';
 
 export class QueueRepositorySQS implements QueueRepository {
@@ -16,6 +16,6 @@ export class QueueRepositorySQS implements QueueRepository {
       MessageBody: JSON.stringify(message),
     };
 
-    await this.sqs.sendMessage(params).promise();
+    await this.sqs.sendMessage(params);
   }
 }

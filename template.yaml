@@ -6,6 +6,16 @@ Parameters:
     Type: String
     Default: "100"
     Description: "Rate limit for the API Gateway (in requests per second)"
+  
+  ApiBurstLimit:
+    Type: String
+    Default: "500"
+    Description: "Burst limit for the API Gateway"
+
+  ApiQuotaLimit:
+    Type: String
+    Default: "100000"
+    Description: "Monthly quota for the API Gateway"
 
 Resources:
   # API Gateway
@@ -13,11 +23,17 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Prod
-      ApiKeyRequired: true
-      Throttle:
-        RateLimit: !Ref ApiRateLimit
       Auth:
         ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: "Usage plan for EventLogs API"
+          Throttle:
+            RateLimit: !Ref ApiRateLimit
+            BurstLimit: !Ref ApiBurstLimit  # Usar el parámetro ApiBurstLimit
+          Quota:
+            Limit: !Ref ApiQuotaLimit       # Usar el parámetro ApiQuotaLimit
+            Period: MONTH
       EndpointConfiguration: REGIONAL
       Cors: "'*'"
       DefinitionBody:
@@ -36,7 +52,7 @@ Resources:
             post:
               x-amazon-apigateway-integration:
                 uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SaveEventFunction.Arn}/invocations
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateEventFunction.Arn}/invocations
                 httpMethod: POST
                 type: aws_proxy
 
@@ -46,7 +62,7 @@ Resources:
     Properties:
       Handler: src/handlers/getEventLog.listEventsHandler
       Runtime: nodejs20.x
-      CodeUri: src/handlers/
+      CodeUri: dist/
       MemorySize: 128
       Timeout: 30
       Environment:
@@ -61,14 +77,16 @@ Resources:
             Path: /event-logs
             Method: GET
             RestApiId: !Ref EventLogsApi
+            Auth:
+              ApiKeyRequired: true
 
   # Lambda Function to save events (POST /event-logs)
   CreateEventFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/createEventLog.createEventHandler
+      Handler: src/handlers/createEventLog.createEventLogHandler
       Runtime: nodejs20.x
-      CodeUri: src/handlers/
+      CodeUri: dist/
       MemorySize: 128
       Timeout: 30
       Environment:
@@ -81,6 +99,8 @@ Resources:
             Path: /event-logs
             Method: POST
             RestApiId: !Ref EventLogsApi
+            Auth:
+              ApiKeyRequired: true
 
   # SQS Queue for event logs
   EventQueue:
@@ -94,7 +114,7 @@ Resources:
     Properties:
       Handler: src/handlers/processEventLog.processEventHandler
       Runtime: nodejs20.x
-      CodeUri: src/handlers/
+      CodeUri: dist/
       MemorySize: 128
       Timeout: 30
       Environment:
@@ -102,11 +122,18 @@ Resources:
           DATABASE_TYPE: Aurora
           AURORA_SECRET_ARN: !ImportValue AuroraDBSecretArn  # Importamos el ARN desde databases.yaml
           DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName  # Importamos el nombre de la tabla desde databases.yaml
-      Events:
-        ProcessEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt EventQueue.QueueUrl
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt EventQueue.QueueName
+
+  # Separate event source mapping
+  ProcessEventFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt EventQueue.Arn
+      FunctionName: !GetAtt ProcessEventFunction.Arn
 
 Outputs:
   ApiUrl:

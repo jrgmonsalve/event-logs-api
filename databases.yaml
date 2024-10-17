@@ -1,18 +1,29 @@
 AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  DBUsername:
+    Type: String
+    Default: "admin"
+    NoEcho: true
+    Description: Database admin username
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Database admin password
+
 Resources:
   # Aurora MySQL DB Instance (standalone)
   AuroraDBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceClass: db.r5.large
-      Engine: aurora-mysql
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      EngineVersion: "5.7"
       DBInstanceIdentifier: MyAuroraInstance
-      MasterUsername: admin
-      MasterUserPassword: !Ref AuroraDBPassword
-      AllocatedStorage: 20
-      BackupRetentionPeriod: 7
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: "5"
       PubliclyAccessible: false
-      EngineVersion: "5.7.mysql_aurora.2.07.1"
       DBName: Registration
 
   # Secrets Manager for Aurora DB credentials
@@ -21,22 +32,8 @@ Resources:
     Properties:
       Name: AuroraDBCredentials
       Description: "Credentials for Aurora DB"
-      SecretString: !Sub |
-        {
-          "username": "admin",
-          "password": "${AuroraDBPassword}"
-        }
-
-  # Password for Aurora DB
-  AuroraDBPassword:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Description: "Password for Aurora DB"
-      GenerateSecretString:
-        SecretStringTemplate: '{"username": "admin"}'
-        GenerateStringKey: "password"
-        PasswordLength: 16
-        ExcludeCharacters: '"@/\'
+      SecretString: 
+        !Sub '{"username": "${DBUsername}", "password": "${DBPassword}"}'
 
   # DynamoDB Table for EventLogs
   DynamoDBTable:
@@ -47,8 +44,6 @@ Resources:
         - AttributeName: "date"
           AttributeType: "S"
         - AttributeName: "type"
-          AttributeType: "S"
-        - AttributeName: "description"
           AttributeType: "S"
       KeySchema:
         - AttributeName: "date"

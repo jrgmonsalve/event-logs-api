@@ -1,10 +1,10 @@
-import { DynamoDB } from 'aws-sdk';
+import { DynamoDBDocument, NativeAttributeValue, ScanCommandInput } from '@aws-sdk/lib-dynamodb';
 import { EventLogRepository } from '../../domain/repository/EventLogRepository';
 import { EventLog } from '../../domain/entity/EventLog';
 import { getDynamoDBClient } from '../database/dynamoDBClient';
 
 export class EventLogRepositoryDynamoDB implements EventLogRepository {
-  private dynamoDb: DynamoDB.DocumentClient;
+  private dynamoDb: DynamoDBDocument;
   private tableName = process.env.DYNAMODB_TABLE_NAME || 'EventLogs';
 
   constructor() {
@@ -12,10 +12,10 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
   }
 
   async findEventLogs(startDate?: string, endDate?: string, type?: string): Promise<EventLog[]> {
-    const params: DynamoDB.DocumentClient.ScanInput = {
+    const params: ScanCommandInput = {
       TableName: this.tableName,
       FilterExpression: undefined,
-      ExpressionAttributeValues: {} as DynamoDB.DocumentClient.ExpressionAttributeValueMap,
+      ExpressionAttributeValues: {} as Record<string, NativeAttributeValue>,
     };
 
     const filterExpressions: string[] = [];
@@ -44,7 +44,7 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
       delete params.ExpressionAttributeValues;
     }
 
-    const result = await this.dynamoDb.scan(params).promise();
+    const result = await this.dynamoDb.scan(params);
 
     return result.Items?.map((item) => new EventLog(item.date, item.description, item.type)) || [];
   }
@@ -59,6 +59,6 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
       },
     };
 
-    await this.dynamoDb.put(params).promise();
+    await this.dynamoDb.put(params);
   }
 }

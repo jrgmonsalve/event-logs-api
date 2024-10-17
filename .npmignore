@@ -1,1 +1,7 @@
 tests/*
+.git/
+.gitignore
+.eslintrc.js
+.prettierrc.js
+tsconfig.json
+samconfig.toml
