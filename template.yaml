@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
 Parameters:
+
+  DatabaseType:
+    Type: String
+    Default: "RDS_INSTANCE"
+    Description: "Database type (RDS_INSTANCE or DYNAMODB)"
+
+  DBname:
+    Type: String
+    Default: "Registration"
+    Description: Database name
+
   ApiRateLimit:
     Type: String
     Default: "100"
@@ -30,9 +41,9 @@ Resources:
           Description: "Usage plan for EventLogs API"
           Throttle:
             RateLimit: !Ref ApiRateLimit
-            BurstLimit: !Ref ApiBurstLimit  # Usar el parámetro ApiBurstLimit
+            BurstLimit: !Ref ApiBurstLimit  
           Quota:
-            Limit: !Ref ApiQuotaLimit       # Usar el parámetro ApiQuotaLimit
+            Limit: !Ref ApiQuotaLimit       
             Period: MONTH
       EndpointConfiguration: REGIONAL
       Cors: "'*'"
@@ -56,20 +67,22 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
 
-  # Lambda Function to list events (GET /event-logs)
   ListEventsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/getEventLog.listEventsHandler
+      Handler: src/application/lambda_handlers/getEventLog.listEventLogsHandler
       Runtime: nodejs20.x
       CodeUri: dist/
       MemorySize: 128
       Timeout: 30
       Environment:
         Variables:
-          DATABASE_TYPE: Aurora
-          AURORA_SECRET_ARN: !ImportValue AuroraDBSecretArn  # Importamos el ARN desde databases.yaml
-          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName  # Importamos el nombre de la tabla desde databases.yaml
+          DATABASE_TYPE: !Ref DatabaseType
+          DB_SECRET_ARN: !ImportValue DBSecretArn
+          DB_NAME: !Ref DBname
+          RDS_INSTANCE_ARN: !ImportValue RDSInstanceArn
+          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName
+          DYNAMODB_ARN: !ImportValue DynamoDBTableArn
       Events:
         ListEvents:
           Type: Api
@@ -80,11 +93,10 @@ Resources:
             Auth:
               ApiKeyRequired: true
 
-  # Lambda Function to save events (POST /event-logs)
   CreateEventFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/createEventLog.createEventLogHandler
+      Handler: src/application/lambda_handlers/createEventLog.createEventLogHandler
       Runtime: nodejs20.x
       CodeUri: dist/
       MemorySize: 128
@@ -101,32 +113,41 @@ Resources:
             RestApiId: !Ref EventLogsApi
             Auth:
               ApiKeyRequired: true
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !GetAtt EventQueue.Arn
 
-  # SQS Queue for event logs
-  EventQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: EventQueue
-
-  # Lambda to process events from SQS
   ProcessEventFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/processEventLog.processEventHandler
+      Handler: src/application/lambda_handlers/processEventLog.processEventLogHandler
       Runtime: nodejs20.x
       CodeUri: dist/
       MemorySize: 128
       Timeout: 30
       Environment:
         Variables:
-          DATABASE_TYPE: Aurora
-          AURORA_SECRET_ARN: !ImportValue AuroraDBSecretArn  # Importamos el ARN desde databases.yaml
-          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName  # Importamos el nombre de la tabla desde databases.yaml
+          DATABASE_TYPE: !Ref DatabaseType
+          DB_SECRET_ARN: !ImportValue DBSecretArn
+          DB_NAME: !Ref DBname
+          RDS_INSTANCE_ARN: !ImportValue RDSInstanceArn
+          DYNAMODB_TABLE_NAME: !ImportValue DynamoDBTableName
+          DYNAMODB_ARN: !ImportValue DynamoDBTableArn  
       Policies:
         - SQSPollerPolicy:
             QueueName: !GetAtt EventQueue.QueueName
 
-  # Separate event source mapping
+  EventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: EventQueue
+      
+  # Separate event source mapping for the SQS queue to trigger the Lambda function
   ProcessEventFunctionEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:

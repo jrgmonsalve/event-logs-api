@@ -11,7 +11,7 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
     this.dynamoDb = getDynamoDBClient();
   }
 
-  async findEventLogs(startDate?: string, endDate?: string, type?: string): Promise<EventLog[]> {
+  async find(startDate?: string, endDate?: string, type?: string): Promise<EventLog[]> {
     const params: ScanCommandInput = {
       TableName: this.tableName,
       FilterExpression: undefined,

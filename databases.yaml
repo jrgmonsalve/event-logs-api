@@ -1,6 +1,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
 Parameters:
+  DBname:
+    Type: String
+    Default: "Registration"
+    Description: Database name
+  DynamoTableName:
+    Type: String
+    Default: "EventLogs"
+    Description: DynamoDB table name
   DBUsername:
     Type: String
     Default: "admin"
@@ -12,34 +20,33 @@ Parameters:
     Description: Database admin password
 
 Resources:
-  # Aurora MySQL DB Instance (standalone)
-  AuroraDBInstance:
+  RDSInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceClass: db.t3.micro
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: 20
       Engine: mysql
-      EngineVersion: "5.7"
-      DBInstanceIdentifier: MyAuroraInstance
+      EngineVersion: 8.0.39
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
-      AllocatedStorage: "5"
       PubliclyAccessible: false
-      DBName: Registration
-
-  # Secrets Manager for Aurora DB credentials
-  AuroraDBSecret:
+      DeletionProtection: false
+      StorageEncrypted: false
+      DBInstanceIdentifier: finaktiva-db
+      DBName: !Ref DBname
+  
+  DBSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: AuroraDBCredentials
-      Description: "Credentials for Aurora DB"
+      Name: DBCredentials
+      Description: "Credentials for the DB"
       SecretString: 
         !Sub '{"username": "${DBUsername}", "password": "${DBPassword}"}'
 
-  # DynamoDB Table for EventLogs
   DynamoDBTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: EventLogs
+      TableName: !Ref DynamoTableName
       AttributeDefinitions:
         - AttributeName: "date"
           AttributeType: "S"
@@ -53,18 +60,26 @@ Resources:
       BillingMode: PAY_PER_REQUEST
 
 Outputs:
-  AuroraDBSecretArn:
-    Description: "Aurora DB Secret ARN"
-    Value: !Ref AuroraDBSecret
+  DBSecretArn:
+    Description: "DB Secret ARN"
+    Value: !Ref DBSecret
     Export:
-      Name: AuroraDBSecretArn 
+      Name: DBSecretArn 
 
-  AuroraDBInstanceEndpoint:
-    Description: "Aurora DB Instance Endpoint"
-    Value: !GetAtt AuroraDBInstance.Endpoint.Address
+  RDSInstanceArn:
+    Description: "RDS Instance ARN"
+    Value: !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db/${RDSInstance}
+    Export:
+      Name: RDSInstanceArn
 
   DynamoDBTableName:
-    Description: "DynamoDB Table Name"
+    Description: Name of the DynamoDB table
     Value: !Ref DynamoDBTable
     Export:
       Name: DynamoDBTableName
+
+  DynamoDBTableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt DynamoDBTable.Arn
+    Export:
+      Name: DynamoDBTableArn
