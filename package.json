@@ -17,11 +17,13 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.674.0",
     "@aws-sdk/client-rds-data": "^3.670.0",
+    "@aws-sdk/client-secrets-manager": "^3.675.0",
     "@aws-sdk/client-sqs": "^3.670.0",
     "@aws-sdk/lib-dynamodb": "^3.674.0",
     "dotenv": "^16.4.5",
     "esbuild": "^0.14.14",
-    "joi": "^17.13.3"
+    "joi": "^17.13.3",
+    "mysql2": "^3.11.3"
   },
   "devDependencies": {
     "@jest/globals": "^29.2.0",

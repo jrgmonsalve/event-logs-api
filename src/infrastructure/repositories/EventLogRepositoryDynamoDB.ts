@@ -1,3 +1,4 @@
+// src/infrastructure/repositories/EventLogRepositoryDynamoDB.ts
 import { DynamoDBDocument, NativeAttributeValue, ScanCommandInput } from '@aws-sdk/lib-dynamodb';
 import { EventLogRepository } from '../../domain/repository/EventLogRepository';
 import { EventLog } from '../../domain/entity/EventLog';
@@ -11,11 +12,19 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
     this.dynamoDb = getDynamoDBClient();
   }
 
-  async find(startDate?: string, endDate?: string, type?: string): Promise<EventLog[]> {
+  async find(
+    startDate?: string,
+    endDate?: string,
+    type?: string,
+    page: number = 1,
+    pageSize: number = 10
+  ): Promise<{ data: EventLog[]; total: number }> {
     const params: ScanCommandInput = {
       TableName: this.tableName,
       FilterExpression: undefined,
       ExpressionAttributeValues: {} as Record<string, NativeAttributeValue>,
+      Limit: pageSize,
+      ExclusiveStartKey: undefined,
     };
 
     const filterExpressions: string[] = [];
@@ -44,9 +53,36 @@ export class EventLogRepositoryDynamoDB implements EventLogRepository {
       delete params.ExpressionAttributeValues;
     }
 
-    const result = await this.dynamoDb.scan(params);
+    let items: EventLog[] = [];
+    let lastEvaluatedKey;
+    let currentPage = 1;
 
-    return result.Items?.map((item) => new EventLog(item.date, item.description, item.type)) || [];
+    do {
+      if (lastEvaluatedKey) {
+        params.ExclusiveStartKey = lastEvaluatedKey;
+      }
+
+      const result = await this.dynamoDb.scan(params);
+
+      if (currentPage === page) {
+        items = result.Items?.map((item) => new EventLog(item.date, item.description, item.type)) || [];
+      }
+
+      lastEvaluatedKey = result.LastEvaluatedKey;
+      currentPage++;
+    } while (lastEvaluatedKey && currentPage <= page);
+
+    // Obtener el total de elementos
+    const totalResult = await this.dynamoDb.scan({
+      TableName: this.tableName,
+      Select: 'COUNT',
+      FilterExpression: params.FilterExpression,
+      ExpressionAttributeValues: params.ExpressionAttributeValues,
+    });
+
+    const total = totalResult.Count || 0;
+
+    return { data: items, total };
   }
 
   async save(eventLog: EventLog): Promise<void> {

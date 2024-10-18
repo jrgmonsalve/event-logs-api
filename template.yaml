@@ -92,6 +92,8 @@ Resources:
             RestApiId: !Ref EventLogsApi
             Auth:
               ApiKeyRequired: true
+      Layers:
+      - !Ref Mysql2Layer
 
   CreateEventFunction:
     Type: AWS::Serverless::Function
@@ -104,6 +106,8 @@ Resources:
       Environment:
         Variables:
           SQS_QUEUE_URL: !GetAtt EventQueue.QueueUrl
+      Layers:
+        - !Ref JoiLayer
       Events:
         CreateEvent:
           Type: Api
@@ -117,10 +121,15 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
+                - sqs:SendMessage
+              Resource: !GetAtt EventQueue.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
-              Resource: !GetAtt EventQueue.Arn
+              Resource: "*"
 
   ProcessEventFunction:
     Type: AWS::Serverless::Function
@@ -141,6 +150,28 @@ Resources:
       Policies:
         - SQSPollerPolicy:
             QueueName: !GetAtt EventQueue.QueueName
+      Layers:
+      - !Ref Mysql2Layer
+  
+  JoiLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: joi-layer
+      Description: "Layer for Joi validation library"
+      ContentUri: lambda-layers/joi-layer
+      CompatibleRuntimes:
+        - nodejs20.x
+      RetentionPolicy: Delete
+
+  Mysql2Layer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: mysql2-layer
+      Description: "Layer for MySQL2 library"
+      ContentUri: lambda-layers/mysql2-layer
+      CompatibleRuntimes:
+        - nodejs20.x
+      RetentionPolicy: Delete
 
   EventQueue:
     Type: AWS::SQS::Queue

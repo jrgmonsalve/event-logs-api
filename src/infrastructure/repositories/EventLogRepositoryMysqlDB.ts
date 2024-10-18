@@ -1,18 +1,26 @@
 // src/infrastructure/repositories/EventLogRepositoryMysqlDB.ts
 import { EventLogRepository } from '../../domain/repository/EventLogRepository';
 import { EventLog } from '../../domain/entity/EventLog';
-import { IDatabaseClient } from '../database/IDatabaseClient';
-import { EventLogMapper } from '../../application/mappers/EventLogMapper';
+import * as mysql from 'mysql2/promise';
+import { getDatabaseCredentials } from '../database/SecretsManagerClient';
 
 export class EventLogRepositoryMysqlDB implements EventLogRepository {
-    private databaseClient: IDatabaseClient;
-    private mapper: EventLogMapper;
     private tableName: string;
+    private secretArn: string;
 
-    constructor(databaseClient: IDatabaseClient, mapper: EventLogMapper) {
-        this.databaseClient = databaseClient;
-        this.mapper = mapper;
+    constructor() {
         this.tableName = 'EventLogs';
+        this.secretArn = process.env.DB_SECRET_ARN || '';
+    }
+
+    private async getConnection() {
+        const credentials = await getDatabaseCredentials(this.secretArn);
+        return mysql.createConnection({
+            host: credentials.host,
+            user: credentials.username,
+            password: credentials.password,
+            database: credentials.dbname,
+        });
     }
 
     async find(
@@ -22,45 +30,46 @@ export class EventLogRepositoryMysqlDB implements EventLogRepository {
         page: number = 1,
         pageSize: number = 10
     ): Promise<{ data: EventLog[]; total: number }> {
+        const offset = (page - 1) * pageSize;
+        const queryParams: any[] = [];
         let query = `SELECT * FROM ${this.tableName} WHERE 1=1`;
-        const parameters: any[] = [];
 
         if (startDate) {
-            query += ' AND date >= :startDate';
-            parameters.push({ name: 'startDate', value: { stringValue: startDate } });
+            query += ' AND date >= ?';
+            queryParams.push(startDate);
         }
         if (endDate) {
-            query += ' AND date <= :endDate';
-            parameters.push({ name: 'endDate', value: { stringValue: endDate } });
+            query += ' AND date <= ?';
+            queryParams.push(endDate);
         }
         if (type) {
-            query += ' AND type = :type';
-            parameters.push({ name: 'type', value: { stringValue: type } });
+            query += ' AND type = ?';
+            queryParams.push(type);
         }
 
-        const offset = (page - 1) * pageSize;
-        query += ` LIMIT :limit OFFSET :offset`;
-        parameters.push({ name: 'limit', value: { longValue: pageSize } });
-        parameters.push({ name: 'offset', value: { longValue: offset } });
+        query += ' LIMIT ? OFFSET ?';
+        queryParams.push(pageSize, offset);
 
-        const result = await this.databaseClient.executeQuery(query, parameters);
-        const data = this.mapper.mapRecordsToEventLogsFromDB(result.records);
+        const connection = await this.getConnection();
+        const [rows] = await connection.execute(query, queryParams);
 
+        // Obtener el total de registros
         const countQuery = `SELECT COUNT(*) as total FROM ${this.tableName}`;
-        const countResult = await this.databaseClient.executeQuery(countQuery, parameters.slice(0, -2)); // Usar los mismos parámetros excepto limit y offset
-        const total = parseInt(countResult.records?.[0]?.[0]?.longValue || '0', 10);
+        const [countRows]: any = await connection.execute(countQuery);
+        const total = countRows[0].total;
+
+        const data = (rows as any[]).map(row => new EventLog(row.description, row.type, row.date));
+        await connection.end();
 
         return { data, total };
     }
 
     async save(eventLog: EventLog): Promise<void> {
-        const query = `INSERT INTO ${this.tableName} (date, description, type) VALUES (:date, :description, :type)`;
-        const parameters = [
-            { name: 'date', value: { stringValue: eventLog.date } },
-            { name: 'description', value: { stringValue: eventLog.description } },
-            { name: 'type', value: { stringValue: eventLog.type } },
-        ];
+        const query = `INSERT INTO ${this.tableName} (date, description, type) VALUES (?, ?, ?)`;
+        const queryParams = [eventLog.date, eventLog.description, eventLog.type];
 
-        await this.databaseClient.executeQuery(query, parameters);
+        const connection = await this.getConnection();
+        await connection.execute(query, queryParams);
+        await connection.end();
     }
 }
